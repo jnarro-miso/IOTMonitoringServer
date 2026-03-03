@@ -11,6 +11,50 @@ from django.conf import settings
 client = mqtt.Client(settings.MQTT_USER_PUB)
 
 
+TEMPERATURE_THRESHOLD = 28  # Umbral para encender el LED
+
+
+def check_temperatura_led():
+    """
+    Consulta el promedio de temperatura de la última hora en la base de datos.
+    Si supera TEMPERATURE_THRESHOLD °C, envía LED_ON al actuador.
+    De lo contrario, envía LED_OFF.
+    """
+    print("Verificando temperatura para control de LED...")
+
+    data = Data.objects.filter(
+        base_time__gte=datetime.now() - timedelta(hours=1),
+        measurement__name='temperatura'
+    ).select_related(
+        'station__user',
+        'station__location__city',
+        'station__location__state',
+        'station__location__country'
+    ).values(
+        'station__user__username',
+        'station__location__city__name',
+        'station__location__state__name',
+        'station__location__country__name'
+    ).annotate(avg_temp=Avg('avg_value'))
+
+    for item in data:
+        avg_temp = item['avg_temp']
+        user = item['station__user__username']
+        city = item['station__location__city__name']
+        state = item['station__location__state__name']
+        country = item['station__location__country__name']
+        topic = '{}/{}/{}/{}/in'.format(country, state, city, user)
+
+        if avg_temp > TEMPERATURE_THRESHOLD:
+            message = "LED_ON"
+            print(f"Temperatura promedio {avg_temp:.1f}°C > {TEMPERATURE_THRESHOLD}°C. Encendiendo LED ({topic})")
+        else:
+            message = "LED_OFF"
+            print(f"Temperatura promedio {avg_temp:.1f}°C <= {TEMPERATURE_THRESHOLD}°C. Apagando LED ({topic})")
+
+        client.publish(topic, message)
+
+
 def analyze_data():
     # Consulta todos los datos de la última hora, los agrupa por estación y variable
     # Compara el promedio con los valores límite que están en la base de datos para esa variable.
@@ -106,6 +150,7 @@ def start_cron():
     '''
     print("Iniciando cron...")
     schedule.every(5).minutes.do(analyze_data)
+    schedule.every(30).seconds.do(check_temperatura_led)
     print("Servicio de control iniciado")
     while 1:
         schedule.run_pending()
