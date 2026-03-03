@@ -2,6 +2,7 @@ from argparse import ArgumentError
 import ssl
 from django.db.models import Avg
 from datetime import timedelta, datetime
+from django.utils import timezone
 from receiver.models import Data, Measurement
 import paho.mqtt.client as mqtt
 import schedule
@@ -11,7 +12,7 @@ from django.conf import settings
 client = mqtt.Client(settings.MQTT_USER_PUB)
 
 
-TEMPERATURE_THRESHOLD = 28  # Umbral para encender el LED
+TEMPERATURE_THRESHOLD = 30  # Umbral para encender el LED
 
 
 def check_temperatura_led():
@@ -23,7 +24,7 @@ def check_temperatura_led():
     print("Verificando temperatura para control de LED...")
 
     data = Data.objects.filter(
-        base_time__gte=datetime.now() - timedelta(hours=1),
+        base_time__gte=timezone.now() - timedelta(hours=1),
         measurement__name='temperatura'
     ).select_related(
         'station__user',
